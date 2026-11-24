@@ -206,7 +206,7 @@ body.fsOn{overflow:hidden}
   <datalist id="symlist"><option>XAU/USD<option>XAG/USD<option>EUR/USD<option>GBP/USD<option>USD/JPY<option>AUD/USD<option>SPY<option>QQQ<option>GLD<option>AAPL<option>NVDA<option>BTC/USD<option>ETH/USD<option>GBP/JPY<option>EUR/JPY<option>USD/CAD<option>IWM<option>MSFT<option>TSLA</datalist>
   <select id="tf"><option value="1s">1s Tick</option><option value="5s">5s Tick</option><option value="15s">15s Tick</option><option value="30s">30s Tick</option><option value="1m">1m Scalp</option><option value="5m">5m Scalp</option><option value="15m">15m Intraday</option><option value="1h" selected>1h Day</option><option value="4h">4h Swing</option><option value="1d">1D Position</option></select>
   <label class="chk">Swing <input id="swl" type="number" min="2" max="15" value="5"></label>
-  <button class="primary" id="go">Analyze</button><label class="chk"><input type="checkbox" id="sniper" checked> Sniper (grade A only)</label><label class="chk"><input type="checkbox" id="vonly" checked> Verified only (anti-fake)</label><button id="bt">Backtest</button><label class="chk">CRT TF <select id="crt"><option value="auto">Auto</option><option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option><option value="1w">1w</option></select></label>
+  <button class="primary" id="go">Analyze</button><label class="chk"><input type="checkbox" id="sniper" checked> Sniper (grade A only)</label><label class="chk"><input type="checkbox" id="vonly" checked> Verified only (anti-fake)</label><button id="bt">Backtest</button><label class="chk"><input type="checkbox" id="tfp" checked> Auto TF profile</label><label class="chk">CRT TF <select id="crt"><option value="auto">Auto</option><option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option><option value="1w">1w</option></select></label>
   <label class="chk"><input type="checkbox" id="auto" checked> Auto-refresh 60s</label>
   <label class="chk"><input type="checkbox" id="alerts"> Alerts</label>
   <label class="chk"><span class="badge">Load CSV</span><input id="csv" type="file" accept=".csv,.txt" hidden></label>
@@ -252,6 +252,7 @@ body.fsOn{overflow:hidden}
 </section>
 <aside>
   <div class="card"><h3>Trade Signal</h3><div id="sigCard"></div></div>
+  <div class="card" data-tab="sig"><h3>Candle movement · TF profile</h3><div id="mvc"></div></div>
   <div class="card" data-tab="sig"><h3>CRT · Candle Range Theory (synced with SMC)</h3><div id="crtc"></div></div>
   <div class="card"><h3>SMC Verification · anti-fake</h3><div id="chkCard"></div></div>
   <div class="card"><h3>Signal Journey · from first confluence to entry, SL and TP</h3>
@@ -805,7 +806,7 @@ function verdict(sg){
 }
 function buildSignal(c,A,htfTrend,px,opt){
   opt=opt||{};
-  const K=crtFor(c,opt),L=c.length,last=px==null?c[L-1].c:px,a=A.atr[L-1],lastEv=A.events[A.events.length-1],out={};
+  const K=crtFor(c,opt),M=moveFor(c,A,opt),L=c.length,last=px==null?c[L-1].c:px,a=A.atr[L-1],lastEv=A.events[A.events.length-1],out={};
   const vp=vprofile(c,(c[1].t-c[0].t)<=9e5?96:120),am=amd(c,A,vp),sy=opt.sym||S.cur||S.sym||'',inf=INFO(sy,c[L-1].c),metal=inf.cls==='metal',vonly=!!($('#vonly')&&$('#vonly').checked);
   if(sy===S.sym&&+$('#spr').value>0)inf.spr=+$('#spr').value;
   function evalDir(dir){
@@ -827,6 +828,7 @@ function buildSignal(c,A,htfTrend,px,opt){
     }else ob=null;
     if(A.sweeps.find(x=>x.dir===dir&&L-1-x.idx<=20)){s+=1;why.push(`${dir>0?'Sell':'Buy'}-side liquidity swept recently`)}
     if(htfTrend===dir){s+=1;why.push('Higher-timeframe bias aligned')}
+    if(M&&M.state==='trend'&&M.dir===dir){s+=1;why.push(`Candle flow on ${M.tf} is trending ${dir>0?'up':'down'} (efficiency ${M.er.toFixed(2)})`)}
     if(K&&!K.pend&&K.dir===dir){s+=2;why.push(`CRT ${tfn(K.ms)} ${dir>0?'bullish: low swept, range reclaimed':'bearish: high swept, range reclaimed'}`)}
     if(lastEv&&lastEv.dir===dir&&lastEv.ok){s+=1;why.push(`Last break confirmed by volume + displacement (${lastEv.rv.toFixed(1)}x)`)}
     return{dir,score:s,why,ob,inZone};
@@ -858,7 +860,7 @@ function buildSignal(c,A,htfTrend,px,opt){
     let react=null;
     for(let k=Math.max(ob.created+1,L-4);k<L&&!react;k++){const q=c[k],rg=(q.h-q.l)||1e-9,bd=Math.abs(q.c-q.o);
       if(d>0?(q.l<=ob.top&&q.c>ob.top&&q.c>q.o&&(bd>=.25*a||(Math.min(q.o,q.c)-q.l)/rg>=.5)):(q.h>=ob.bot&&q.c<ob.bot&&q.c<q.o&&(bd>=.25*a||(q.h-Math.max(q.o,q.c))/rg>=.5)))react={idx:k}}
-    const obBad=!fresh?'already tested before: not a first retest':size>3.5?`too wide (${size.toFixed(1)} ATR): poor risk`:size<.25?`too thin (${size.toFixed(2)} ATR): noise candle`:age>150?`stale (${age} bars old)`:'';
+    const obBad=!fresh?'already tested before: not a first retest':size>3.5?`too wide (${size.toFixed(1)} ATR): poor risk`:size<.25?`too thin (${size.toFixed(2)} ATR): noise candle`:age>(TFP[tfKey(c)]||TFP.def).age?`stale (${age} bars old)`:'';
     const chk=[
       {k:'HTF bias',ok:htfTrend===d,txt:htfTrend==null?'Higher timeframe unavailable: bias unproven':htfTrend===d?'Higher-timeframe trend agrees':'Higher-timeframe trend is against this trade'},
       {n:1,k:'Liquidity sweep',ok:!!swp,txt:swp?`${swp.side==='SSL'?'Sell':'Buy'}-side liquidity taken ${L-1-swp.idx} bars ago${eqHit?' (equal '+(d>0?'lows':'highs')+' pool)':''}`:'No liquidity grab before the move: no inducement, possible fake'},
@@ -867,6 +869,7 @@ function buildSignal(c,A,htfTrend,px,opt){
       {n:4,k:'FVG imbalance',ok:!!fvg,txt:fvg?`Imbalance left by the displacement (${((fvg.top-fvg.bot)/a).toFixed(1)} ATR, ${fvg.filled===null?'still open':'already retraced'})`:'No FVG after the break: displacement is not proven'},
       {k:'Premium / Discount',ok:pdOK,txt:pdOK?`OB sits in ${d>0?'discount':'premium'} of the range`:`OB is on the wrong side of 50% (${d>0?'buying premium':'selling discount'})`},
       {n:'C',k:'CRT sync',ok:crtOk(K,d,ob,c),txt:crtTxt(K,d,ob,c)},
+      {k:'Candle movement',ok:!moveBlock(M,d,K),txt:moveTxt(M,d,K)},
       {k:'Costs & R:R',ok:out.cr<=.1&&out.rr1>=1.5,txt:`TP1 ${out.rr1.toFixed(1)}R, spread+slip ${Math.round(out.cr*100)}% of stop`+(out.cr>.1?' (too high)':out.rr1<1.5?' (R:R too low)':'')}
     ];
     if(metal){
@@ -894,6 +897,7 @@ function buildSignal(c,A,htfTrend,px,opt){
     out.grade=pick.score>=7&&htfTrend===d&&out.rr>=2&&out.cr<=.1&&pocOK&&(!metal||amOK)?'A':pick.score>=6?'B':'C';
     if(out.cr>.15){out.status='NO TRADE';out.sub='Spread+slippage is '+Math.round(out.cr*100)+'% of the stop distance: costs would eat the edge';out.entry=null}
     else if(metal&&(c[1].t-c[0].t)<9e5&&!(K&&!K.pend&&K.dir===out.dir)){out.status='NO TRADE';out.sub='Gold/Silver: below 15m the spread and noise burn small stops. Use 15m or higher';out.entry=null}
+    else if(!opt.bt&&M&&moveBlock(M,d,K)){out.status='NO TRADE';out.sub='Candle movement ('+M.tf+'): '+moveBlock(M,d,K);out.entry=null;out.watch=true;out.failed='Candle movement'}
     else if(vonly&&!opt.bt&&!out.verified){out.status='NO TRADE';out.sub='Not verified, possible fake. Failed: '+out.failed;out.entry=null;out.watch=true}
     else if(($('#sniper').checked||metal)&&!opt.bt&&out.grade!=='A'){out.status='NO TRADE';out.sub='Grade '+out.grade+': needs score ≥7, HTF aligned, entry on the correct side of the POC'+(metal?', a clear AMD phase':'')+', R:R ≥ 2';out.entry=null;out.watch=true;out.failed='grade '+out.grade+' (needs A)'}
     else{out.status=(d>0?'LONG':'SHORT')+' SETUP';out.sub=pick.inZone?'Active: price is inside the zone':'Pending: wait for retrace into the zone'}
@@ -956,10 +960,12 @@ function draw(){
   ctx.textAlign='center';
   for(let g=1;g<6;g++){
     const i=Math.round(start+(end-start)*g/6);if(i<0||i>=c.length)continue;const d=new Date(c[i].t);
-    ctx.fillText(TFMS[$('#tf').value]<6e4?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}):$('#tf').value==='1d'?d.toLocaleDateString([],{month:'short',day:'numeric'}):d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}),X(i),Hh-mb/2);
+    ctx.fillText(TFMS[$('#tf').value]<6e4?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}):TFMS[$('#tf').value]<9e5?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):$('#tf').value==='1d'?d.toLocaleDateString([],{month:'short',day:'numeric'}):d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}),X(i),Hh-mb/2);
   }
   ctx.save();ctx.beginPath();ctx.rect(ml,mt,pw,ph);ctx.clip();
   if(S.K&&S.K.hi!=null&&chk('#lyCRT')){const K=S.K,x0=Math.max(ml,X(K.i1));ctx.fillStyle='rgba(179,136,255,.07)';ctx.fillRect(x0,Y(K.hi),R-x0,Y(K.lo)-Y(K.hi));ctx.strokeStyle='#b388ff';ctx.fillStyle='#b388ff';ctx.textAlign='left';[['CRT H',K.hi,[]],['CRT 50%',K.mid,[2,4]],['CRT L',K.lo,[]]].forEach(q=>{ctx.setLineDash(q[2]);ctx.beginPath();ctx.moveTo(x0,Y(q[1]));ctx.lineTo(R,Y(q[1]));ctx.stroke();ctx.fillText(q[0],x0+4,Y(q[1])-7)});ctx.setLineDash([]);ctx.textAlign='center'}
+  if(chk('#lyCRT')){const ms=S.K&&S.K.ms?S.K.ms:crtMs(TFMS[$('#tf').value]);ctx.strokeStyle='rgba(179,136,255,.28)';ctx.setLineDash([3,5]);for(let i=Math.max(1,vs);i<end;i++){if(Math.floor(c[i].t/ms)!==Math.floor(c[i-1].t/ms)){const x=X(i)-bw/2;ctx.beginPath();ctx.moveTo(x,mt);ctx.lineTo(x,mt+ph);ctx.stroke()}}ctx.setLineDash([])}
+  if(S.M){const M=S.M;ctx.textAlign='right';ctx.font='bold 11px system-ui,sans-serif';ctx.fillStyle=M.state==='trend'?(M.dir>0?'#26a69a':'#ef5350'):M.state==='chop'?'#f5b942':'#ef5350';ctx.fillText(M.label,R-6,mt+12);ctx.font='10px system-ui,sans-serif';ctx.textAlign='center'}
   if(chk('#lyPD')){
     const pd=A.pd,yh=Y(pd.hi),ye=Y(pd.eq),yl=Y(pd.lo);
     ctx.fillStyle='rgba(239,83,80,.06)';ctx.fillRect(ml,yh,pw,ye-yh);
@@ -1592,7 +1598,7 @@ $('#adTest').addEventListener('click',()=>{AD.ctx=AD.ctx||new(window.AudioContex
 })();
 
 /* ===== Mobile tabs: group the cards, remember the active tab ===== */
-const TABMAP=[['Alert Desk','chart sig'],['SMC Screener','scr'],['Trade Signal','chart sig'],['SMC Verification','sig'],['Position Size','sig'],['Signal Journey','jr'],['CRT','sig'],['Seconds Desk','desk'],['Swing Desk','desk'],['Metals Desk','desk'],['Multi-TF','desk']];
+const TABMAP=[['Alert Desk','chart sig'],['SMC Screener','scr'],['Trade Signal','chart sig'],['SMC Verification','sig'],['Position Size','sig'],['Signal Journey','jr'],['Candle movement','sig'],['CRT','sig'],['Seconds Desk','desk'],['Swing Desk','desk'],['Metals Desk','desk'],['Multi-TF','desk']];
 document.querySelectorAll('main .card').forEach(c=>{const h=c.querySelector('h3'),t=h?h.textContent.trim():'',m=TABMAP.find(x=>t.startsWith(x[0]));c.dataset.tab=m?m[1]:'more'});
 box.dataset.tab='chart';
 ['#key','#testKey','#bt','#swl','#sniper','#vonly','#auto','#alerts','#csv'].forEach(q=>{const e=$(q);if(!e)return;(e.closest('label')||e).classList.add('adv')});
@@ -1639,7 +1645,7 @@ function crtCard(){const K=S.K,el=$('#crtc');if(!el)return;
   if(K.none){el.innerHTML='<div class="hint">No valid CRT in the last 4 '+tfn(K.ms)+' candles (needs a sweep of the previous candle\'s high/low and a close back inside its range).</div>';return}
   const sell=K.dir<0,ck=S.sig&&S.sig.chk&&S.sig.chk.find(x=>x.k==='CRT sync');
   el.innerHTML=`<div class="kv"><div>CRT TF</div><div>${tfn(K.ms)}${K.pend?' · sweep running':K.live?' · candle forming':' · closed'}</div><div>Bias</div><div class="${sell?'dn':'up'}">${sell?'SELL · high swept':'BUY · low swept'}</div><div>Range C1</div><div>${fmt(K.lo)} – ${fmt(K.hi)}</div><div>50% (TP1)</div><div>${fmt(K.mid)}</div>${K.pend?'':`<div>Target (TP2)</div><div>${fmt(K.tgt)}</div><div>Sweep extreme</div><div>${fmt(K.ext)}</div>`}${ck?`<div>SMC sync</div><div class="${ck.ok?'up':'dn'}">${ck.ok?'aligned':'not aligned'}</div>`:''}</div><div class="hint">${K.pend?'Price broke the range but has not closed back inside: wait for the CRT candle to close.':'CRT gives range + direction on '+tfn(K.ms)+'; entry only after an MSS/CHoCH + order block on '+$('#tf').value+'. SL sits beyond the sweep extreme.'}</div>`}
-const _rp=renderPanel;renderPanel=function(){_rp();crtCard()};
+const _rp=renderPanel;renderPanel=function(){_rp();crtCard();mvCard()};
 $('#crt').addEventListener('change',()=>load(false));$('#lyCRT').addEventListener('change',()=>draw());
 /* seconds candles from live ticks: Binance Futures aggTrade WebSocket (REST seed + 3 s price-poll fallback) */
 const TK={ws:null,bars:[],cur:null,sec:0,sym:'',tm:null};
@@ -1661,6 +1667,46 @@ async function tkData(sym,tf){
   if(TK.sym!==sym||TK.sec!==sec)await tkStart(sym,sec);
   if(TK.bars.length<60)throw new Error('Collecting ticks '+TK.bars.length+'/60 ('+tf+' bars)');
   const d=TK.bars.slice();d.lv=TK.cur?{...TK.cur}:null;d.px=TK.cur?TK.cur.c:d[d.length-1].c;d.stale=false;return d}
+/* ===== TF PROFILE + CANDLE MOVEMENT: each timeframe gets its own view, swing length, layers and trade/no-trade rules ===== */
+const TFP={
+ '1s':{name:'Tick timing · CRT-gated',n:6,view:80,win:30,er:.30,spk:3.2,vlo:.45,vhi:2.4,age:90,chopCRT:1,tick:1,settle:5,lay:{VP:0,PD:0}},
+ '5s':{name:'Tick timing · CRT-gated',n:6,view:80,win:24,er:.28,spk:3.2,vlo:.45,vhi:2.4,age:90,chopCRT:1,tick:1,settle:5,lay:{VP:0,PD:0}},
+ '15s':{name:'Tick timing · CRT-gated',n:5,view:80,win:20,er:.26,spk:3.3,vlo:.45,vhi:2.3,age:90,chopCRT:1,tick:1,settle:4,lay:{VP:0,PD:0}},
+ '30s':{name:'Tick timing · CRT-gated',n:5,view:90,win:16,er:.25,spk:3.3,vlo:.45,vhi:2.3,age:100,chopCRT:1,tick:1,settle:4,lay:{VP:0,PD:0}},
+ '1m':{name:'Scalp timing · CRT-gated',n:5,view:90,win:20,er:.24,spk:3.4,vlo:.5,vhi:2.2,age:100,chopCRT:1,settle:3,lay:{VP:0}},
+ '5m':{name:'Intraday scalp',n:5,view:110,win:20,er:.22,spk:3.5,vlo:.5,vhi:2,age:120,chopCRT:1,settle:2,lay:{}},
+ def:{name:'Standard',n:5,view:120,win:30,er:.2,spk:4,vlo:.4,vhi:2.5,age:150,chopCRT:0,settle:1,lay:{}}};
+const tfKey=c=>{const st=c[1].t-c[0].t;return Object.keys(TFMS).find(k=>TFMS[k]===st)||''};
+function moveFor(c,A,opt){opt=opt||{};if(!c||c.length<70||!A)return null;
+  const L=c.length,tf=tfKey(c),P=TFP[tf]||TFP.def,w=Math.min(P.win,L-2),a=A.atr[L-1];
+  const net=c[L-1].c-c[L-1-w].c;let path=0;for(let i=L-w;i<L;i++)path+=Math.abs(c[i].c-c[i-1].c);
+  const er=path?Math.abs(net)/path:0,h=A.atr.slice(-100).slice().sort((x,y)=>x-y),med=h[h.length>>1]||a,volR=a/med;
+  let spike=0;for(let i=L-3;i<L;i++)spike=Math.max(spike,(c[i].h-c[i].l)/(A.atr[i-1]||a));
+  const st=c[1].t-c[0].t;let gaps=0;for(let i=L-30;i<L;i++)if(c[i].t-c[i-1].t>st*1.5)gaps++;const gap=gaps/30;
+  const dir=er>=P.er?Math.sign(net):0;
+  let state,label,cls,rule;
+  if(P.tick&&gap>.4){state='thin';label=tf+' · THIN TICKS';cls='dn';rule='Tick stream is sparse (many empty seconds): candles are not a real price path. No entries.'}
+  else if(spike>P.spk||volR>P.vhi){state='spike';label=tf+' · SPIKE · wait '+P.settle+' bars';cls='dn';rule=`A ${spike.toFixed(1)} ATR candle / ATR ${volR.toFixed(1)}× median: news-style move. No entries until ${P.settle} bars settle.`}
+  else if(volR<P.vlo){state='quiet';label=tf+' · QUIET';cls='wr';rule=`ATR only ${volR.toFixed(2)}× its median: too quiet, noise hunts small stops. No entries.`}
+  else if(er>=P.er){state='trend';label=tf+' · TREND '+(dir>0?'↑':'↓')+' ER '+er.toFixed(2);cls=dir>0?'up':'dn';rule='Trend flow: SMC continuation (BOS + order block) in the flow direction is allowed. Counter-flow only after a CRT sweep + MSS.'}
+  else{state='chop';label=tf+' · CHOP ER '+er.toFixed(2);cls='wr';rule=P.chopCRT?'Choppy range: only CRT sweep reversals at the range edges. SMC continuation is blocked.':'Choppy: continuation setups need extra confirmation.'}
+  const M={state,label,cls,rule,er,volR,spike,gap,dir,tf,P,win:w,prof:P.name};
+  if(!opt.bt&&(opt.sym||S.cur||S.sym||'')===S.sym)S.M=M;
+  return M}
+function moveBlock(M,d,K){if(!M)return'';const ka=K&&!K.pend&&K.dir===d;
+  if(M.state==='thin'||M.state==='spike'||M.state==='quiet')return M.rule;
+  if(M.state==='trend'&&M.dir!==d&&!ka)return `Counter-flow: last ${M.win} bars trend ${M.dir>0?'up':'down'}. Fading it needs a CRT sweep + MSS.`;
+  if(M.state==='chop'&&M.P.chopCRT&&!ka)return 'Choppy range: only a CRT sweep reversal is tradeable here.';
+  return''}
+const moveTxt=(M,d,K)=>M?(moveBlock(M,d,K)||`${M.label}: flow supports this trade (ER ${M.er.toFixed(2)}, ATR ${M.volR.toFixed(1)}×)`):'Not enough candles to classify movement';
+function mvCard(){const M=S.M,el=$('#mvc');if(!el)return;if(!M){el.innerHTML='<div class="hint">–</div>';return}
+  const sg=S.sig;
+  el.innerHTML=`<div class="kv"><div>Profile</div><div>${M.tf} · ${M.prof}</div><div>State</div><div class="${M.cls}">${M.label}</div><div>Efficiency (${M.win} bars)</div><div>${M.er.toFixed(2)} (min ${M.P.er})</div><div>ATR vs median</div><div>${M.volR.toFixed(2)}× (ok ${M.P.vlo}–${M.P.vhi})</div><div>Biggest candle (3 bars)</div><div>${M.spike.toFixed(1)} ATR (max ${M.P.spk})</div>${M.P.tick?`<div>Tick gaps</div><div>${Math.round(M.gap*100)}%</div>`:''}<div>Flow</div><div>${M.dir>0?'up':M.dir<0?'down':'no direction'}</div></div><div class="hint">${M.rule}</div>`+(sg?`<div class="${sg.status==='NO TRADE'?'dn':'up'}" style="margin-top:6px;font-weight:600">${sg.status}: ${esc(sg.sub||'')}</div>`:'')}
+function applyProfile(){if(!$('#tfp')||!$('#tfp').checked)return;
+  const P=TFP[$('#tf').value]||TFP.def;$('#swl').value=P.n;S.count=Math.round(P.view*(innerWidth<700?.55:1));S.offset=0;S.yz=1;
+  [['VP','#lyVP',1],['PD','#lyPD',1],['FVG','#lyFVG',1],['Mit','#lyMit',0]].forEach(q=>{const e=$(q[1]);if(e)e.checked=q[0] in P.lay?!!P.lay[q[0]]:!!q[2]})}
+$('#tf').addEventListener('change',applyProfile,true);$('#tfp').addEventListener('change',()=>{applyProfile();load(false)});
+applyProfile();
 if(innerWidth<700)S.count=60;
 resize();load();
 </script>
