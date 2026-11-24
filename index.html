@@ -433,7 +433,7 @@ async function td(sym,tf,force,abort){if(TFMS[tf]<6e4)return tkData(sym,tf);
   const k=sym+'|'+tf;let c=cache.get(k);if(!c){c=loadPers(k);if(c)cache.set(k,c)}
   if(c&&!force&&fresh(sym,tf,c))return c.d;
   const stale=m=>{if(c){c.d.stale=true;return c.d}throw new Error(m)};
-  if(LIMHIT()||useCr(0)>=CRL())return stale('Daily credit budget used (resets 00:00 UTC) and no cached '+sym+' '+TD[tf]+' data');
+  if(LIMHIT())return stale('Twelve Data reported its daily credit limit (re-checked every 15 min, not a local block). No cached '+sym+' '+TD[tf]+' data');
   await slot(abort);
   useCr(1);
   for(let a=0;a<3;a++){
@@ -1389,7 +1389,7 @@ async function scan0(){
   if(top.length){const b=top.sort((a,b)=>b.sg.score-a.sg.score)[0];log(`Screener ${STYLE[st]}: best ${b.sym} ${b.sg.status} @ ${fmt(b.sg.entry,b.sym)}`);notify(`${b.sym} ${b.sg.status}`)}
 }
 async function scan(){if(S.scanBusy)return;S.scanBusy=true;try{await scan0()}finally{S.scanBusy=false}}
-function useCr(k){const day=new Date().toISOString().slice(0,10);let o={};try{o=JSON.parse(localStorage.getItem('tdcr')||'{}')}catch(e){}if(o.d!==day||o.k!==KFP())o={d:day,n:0,k:KFP()};o.n+=k;try{localStorage.setItem('tdcr',JSON.stringify(o))}catch(e){}$('#cr').textContent='credits today ≈ '+o.n+'/'+CRL()+(LIMHIT()?' · LIMIT HIT: using cache':'');return o.n}
+function useCr(k){const day=new Date().toISOString().slice(0,10);let o={};try{o=JSON.parse(localStorage.getItem('tdcr')||'{}')}catch(e){}if(o.d!==day||o.k!==KFP())o={d:day,n:0,k:KFP()};o.n+=k;try{localStorage.setItem('tdcr',JSON.stringify(o))}catch(e){}$('#cr').textContent='credits today ≈ '+o.n+'/'+CRL()+' · r9'+(LIMHIT()?' · LIMIT HIT: using cache':'');return o.n}
 function sbuild(sym,h,st,n){const d=S.D[sym],A=analyze(d,n);S.cur=sym;const r={sym,A,h,sg:buildSignal(d,A,h,d.px),am:amd(d,A,vprofile(d,LB[st]))};S.cur=null;return r}
 async function livePx(sym){if(BN.ok(sym))return bnPx(sym);await slot();
   const j=await(await fetch(`https://api.twelvedata.com/price?symbol=${encodeURIComponent(sym)}&apikey=${encodeURIComponent(TDK())}`)).json();useCr(1);return j&&j.price?+j.price:null}
@@ -1488,7 +1488,7 @@ async function backtest(){
 }
 $('#bt').addEventListener('click',backtest);
 /* ===== EVENTS ===== */
-$('#key').value=store('tdkey')||'';
+$('#key').value=store('tdkey')||'';if(store('build')!=='r9'){resetCr();store('build','r9')}
 $('#key').addEventListener('input',()=>store('tdkey',TDK()));
 $('#testKey').addEventListener('click',async()=>{
   const k=TDK();if(!k){setSrc('Keyless feed active: no key needed for gold/silver','live');return}
