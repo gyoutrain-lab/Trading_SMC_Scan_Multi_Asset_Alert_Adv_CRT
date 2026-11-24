@@ -418,6 +418,8 @@ const pt=d=>Date.parse(d.includes(' ')?d.replace(' ','T')+'Z':d+'T00:00:00Z');
 const reqT=[];
 async function slot(abort){for(;;){if(abort&&abort())throw new Error('superseded');const now=Date.now(),cap=Math.max(1,+$('#cpm').value||8);while(reqT.length&&now-reqT[0]>61000)reqT.shift();if(reqT.length<cap){reqT.push(now);return}if(!abort||!abort())setSrc('Waiting for API rate limit ('+cap+'/min) · '+Math.ceil((reqT[0]+61000-now)/1000)+'s','demo');await sleep(Math.min(reqT[0]+61000-now+50,1500))}}
 const CRL=()=>+store('crl')||800,UTCD=()=>new Date().toISOString().slice(0,10);
+/* the daily-limit flag and the credit counter belong to ONE api key: a new key starts clean */
+const KFP=()=>{const k=TDK();return k?k.length+':'+k.slice(-6):''},OUTK=()=>UTCD()+'|'+KFP();
 const f6=x=>[x.t,x.o,x.h,x.l,x.c,x.v],u6=a=>({t:a[0],o:a[1],h:a[2],l:a[3],c:a[4],v:a[5]});
 function loadPers(k){try{const o=JSON.parse(localStorage.getItem('tdc:'+k)||'null');if(!o)return null;const d=o.d.map(u6);d.lv=o.lv?u6(o.lv):null;d.px=o.px;return{at:o.at,d}}catch(e){return null}}
 function savePers(k,at,d){try{localStorage.setItem('tdc:'+k,JSON.stringify({at,d:d.slice(-500).map(f6),lv:d.lv?f6(d.lv):null,px:d.px}))}catch(e){}}
@@ -429,7 +431,7 @@ async function td(sym,tf,force,abort){if(TFMS[tf]<6e4)return tkData(sym,tf);
   const k=sym+'|'+tf;let c=cache.get(k);if(!c){c=loadPers(k);if(c)cache.set(k,c)}
   if(c&&!force&&fresh(sym,tf,c))return c.d;
   const stale=m=>{if(c){c.d.stale=true;return c.d}throw new Error(m)};
-  if(store('tdout')===UTCD()||useCr(0)>=CRL())return stale('Daily credit budget used (resets 00:00 UTC) and no cached '+sym+' '+TD[tf]+' data');
+  if(store('tdout')===OUTK()||useCr(0)>=CRL())return stale('Daily credit budget used (resets 00:00 UTC) and no cached '+sym+' '+TD[tf]+' data');
   await slot(abort);
   useCr(1);
   for(let a=0;a<2;a++){
@@ -439,7 +441,7 @@ async function td(sym,tf,force,abort){if(TFMS[tf]<6e4)return tkData(sym,tf);
     if(j.status==='error'||!j.values){
       const m=String(j.message||'');
       if(j.code===429&&!/day|daily/i.test(m)&&!a){setSrc('Rate limit, waiting 60s','demo');await sleep(61000);if(abort&&abort())throw new Error('superseded');continue}
-      if(j.code===429){store('tdout',UTCD());useCr(0);return stale('Daily API credit limit reached (resets 00:00 UTC) and no cached data')}
+      if(j.code===429){store('tdout',OUTK());useCr(0);return stale('Daily API credit limit reached (resets 00:00 UTC) and no cached data')}
       throw new Error(j.code===401?'Invalid API key: check it at twelvedata.com/account/api-keys':j.code===403?sym+' '+TD[tf]+' is not in your plan. Try EUR/USD, BTC/USD or SPY':j.code===404?'Symbol not found: '+sym:(m||'API error'));
     }
     const d=j.values.map(v=>({t:pt(v.datetime),o:+v.open,h:+v.high,l:+v.low,c:+v.close,v:+v.volume||0})).sort((a,b)=>a.t-b.t);
@@ -1385,7 +1387,7 @@ async function scan0(){
   if(top.length){const b=top.sort((a,b)=>b.sg.score-a.sg.score)[0];log(`Screener ${STYLE[st]}: best ${b.sym} ${b.sg.status} @ ${fmt(b.sg.entry,b.sym)}`);notify(`${b.sym} ${b.sg.status}`)}
 }
 async function scan(){if(S.scanBusy)return;S.scanBusy=true;try{await scan0()}finally{S.scanBusy=false}}
-function useCr(k){const day=new Date().toISOString().slice(0,10);let o={};try{o=JSON.parse(localStorage.getItem('tdcr')||'{}')}catch(e){}if(o.d!==day)o={d:day,n:0};o.n+=k;try{localStorage.setItem('tdcr',JSON.stringify(o))}catch(e){}$('#cr').textContent='credits today ≈ '+o.n+'/'+CRL()+(store('tdout')===day?' · LIMIT HIT: using cache':'');return o.n}
+function useCr(k){const day=new Date().toISOString().slice(0,10);let o={};try{o=JSON.parse(localStorage.getItem('tdcr')||'{}')}catch(e){}if(o.d!==day||o.k!==KFP())o={d:day,n:0,k:KFP()};o.n+=k;try{localStorage.setItem('tdcr',JSON.stringify(o))}catch(e){}$('#cr').textContent='credits today ≈ '+o.n+'/'+CRL()+(store('tdout')===OUTK()?' · LIMIT HIT: using cache':'');return o.n}
 function sbuild(sym,h,st,n){const d=S.D[sym],A=analyze(d,n);S.cur=sym;const r={sym,A,h,sg:buildSignal(d,A,h,d.px),am:amd(d,A,vprofile(d,LB[st]))};S.cur=null;return r}
 async function livePx(sym){if(BN.ok(sym))return bnPx(sym);await slot();
   const j=await(await fetch(`https://api.twelvedata.com/price?symbol=${encodeURIComponent(sym)}&apikey=${encodeURIComponent(TDK())}`)).json();useCr(1);return j&&j.price?+j.price:null}
