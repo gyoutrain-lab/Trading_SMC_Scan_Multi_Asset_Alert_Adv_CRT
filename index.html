@@ -1603,9 +1603,70 @@ async function run(){
 $('#adBody').addEventListener('click',e=>{const t=e.target.closest('tr[data-s]');if(t){$('#sym').value=t.dataset.s;$('#tf').value='15m';$('#go').click()}});
 async function wake(){try{AD.wl=await navigator.wakeLock.request('screen')}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(AD.on&&document.visibilityState==='visible')wake()});
+/* ===== TIMEFRAME EARLY-ENTRY ALERTS: SMC or CRT on any timeframe, one distinct sound per timeframe ===== */
+const TFA=['1m','5m','15m','1h','4h','1d'],TSND={'1m':{n:[2000],d:.09,w:'sine'},'5m':{n:[1500,1500],d:.11,w:'sine'},'15m':{n:[1100,1100,1100],d:.14,w:'square'},'1h':{n:[700,880,1050,1320],d:.17,w:'triangle'},'4h':{n:[520,390],d:.5,w:'sawtooth'},'1d':{n:[330,415,494,659],d:.38,w:'sawtooth'}};
+AD.ts={};try{AD.ts=JSON.parse(store('adTfSent')||'{}')}catch(e){}
+function svT(){const o={},n=Date.now();for(const k in AD.ts)if(n-AD.ts[k]<864e5)o[k]=AD.ts[k];AD.ts=o;store('adTfSent',JSON.stringify(o))}
+const tfSel=()=>(store('adTf')||'5m,15m,1h,4h').split(',').filter(x=>TSND[x]);
+$('#adOn').parentNode.insertAdjacentHTML('beforebegin',`<div class="ckh" style="margin-top:10px">Timeframe alerts · early entry only (SMC or CRT)</div>
+<div class="kv" style="margin-top:6px"><div>Watch symbols</div><div><input id="adTs" style="width:170px" placeholder="Auto (best now)"></div></div>
+<div id="adTfs" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">${TFA.map(t=>`<label class="chk"><input type="checkbox" data-tf="${t}"> ${t}</label>`).join('')}</div>
+<div id="adTt" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${TFA.map(t=>`<button data-tt="${t}">♪ ${t}</button>`).join('')}</div>
+<div class="hint">Auto symbols: leave Watch symbols blank. Every 15 min it ranks gold, silver and the forex majors and crosses that are open in the current session, and keeps the best 4 (spread small against ATR, trending, normal volatility). Forex needs your Twelve Data key; below 15m only the keyless metals are scanned, to protect your daily credits.<br>Sound guide: 1m one high tick · 5m double beep · 15m triple buzz · 1h four-note melody · 4h two long low tones · 1d slow deep arpeggio. BUY sounds end higher, SELL sounds end lower. Tap a ♪ button to learn each sound (plays BUY then SELL). An alert fires once per setup, only at the early stage: a verified SMC zone that price is inside or within 2 ATR of, or a fresh CRT sweep that closed back inside its range with room to the 50% target. It does not repeat at confirmation. Press Start alerts to run it.</div>
+<div id="adTl" style="overflow-x:auto"></div>`);
+$('#adTs').value=store('adTs')||'';$('#adTs').addEventListener('input',()=>store('adTs',$('#adTs').value.trim()));
+{const sel=tfSel();document.querySelectorAll('#adTfs input').forEach(i=>{i.checked=sel.includes(i.dataset.tf);i.addEventListener('change',()=>store('adTf',[...document.querySelectorAll('#adTfs input')].filter(x=>x.checked).map(x=>x.dataset.tf).join(',')))})}
+function tfBeep(tf,dir){const c=TSND[tf];if(!c)return 0;try{const a=AD.ctx||(AD.ctx=new(window.AudioContext||window.webkitAudioContext)());a.resume();let n=c.n.slice();
+  if(new Set(n).size===1)n[n.length-1]*=dir>0?1.26:.79;else n.sort((x,y)=>dir>0?x-y:y-x);
+  n.forEach((fq,i)=>{const o=a.createOscillator(),g=a.createGain(),t0=a.currentTime+i*(c.d+.05);o.type=c.w;o.frequency.value=fq;g.gain.setValueAtTime(.0001,t0);g.gain.exponentialRampToValueAtTime(.35,t0+.01);g.gain.exponentialRampToValueAtTime(.0001,t0+c.d);o.connect(g);g.connect(a.destination);o.start(t0);o.stop(t0+c.d+.02)})}catch(e){}
+  try{navigator.vibrate&&navigator.vibrate(Array.from({length:TFA.indexOf(tf)+1},()=>[200,100]).flat())}catch(e){}
+  return c.n.length*(c.d+.05)*1000}
+$('#adTt').addEventListener('click',e=>{const tf=e.target.dataset.tt;if(!tf)return;const ms=tfBeep(tf,1);setTimeout(()=>tfBeep(tf,-1),ms+400)});
+function tfAlert(tf,dir,kind,msg){
+  tfBeep(tf,dir);
+  try{speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(msg))}catch(e){}
+  try{if('Notification' in window&&Notification.permission==='granted')new Notification('SMC '+tf+' early '+kind,{body:msg,requireInteraction:true})}catch(e){}
+  const t=$('#adNt').value.trim();if(t)fetch('https://ntfy.sh/'+encodeURIComponent(t),{method:'POST',body:msg,headers:{Title:'SMC '+tf+' early '+kind,Priority:'4',Tags:'eyes'}}).catch(()=>{});
+  const w=$('#adWa'),s=$('#adSms');w.href='https://wa.me/'+wa()+'?text='+encodeURIComponent(msg);s.href='sms:+'+wa()+'?body='+encodeURIComponent(msg);w.style.display=s.style.display='';
+  log('EARLY '+tf+' '+kind+': '+msg)}
+const FXP=['XAU/USD','XAG/USD','EUR/USD','GBP/USD','USD/JPY','AUD/USD','USD/CAD','USD/CHF','NZD/USD','EUR/JPY','GBP/JPY','EUR/GBP','AUD/JPY','EUR/AUD'];
+function sessCur(){const n=new Date(),h=n.getUTCHours()+n.getUTCMinutes()/60,c=[];if(h>=22||h<7)c.push('JPY','AUD','NZD');if(h>=7&&h<16)c.push('EUR','GBP','CHF');if(h>=12&&h<21)c.push('USD','CAD','EUR','GBP');return c}
+async function autoPick(n){
+  if(AD.auto&&Date.now()-AD.auto.at<9e5)return AD.auto.list;
+  const h=new Date().getUTCHours(),cur=sessCur(),cand=FXP.filter(s=>mkt(s).open&&(/^XA[UG]/.test(s)?h>=7&&h<17:(BN.ok(s)||!!TDK())&&s.split('/').some(x=>cur.includes(x)))),sc=[];
+  for(const s of cand){try{const d=await td(s,'1h'),A=analyze(d,n),L=d.length,a=A.atr[L-1],px=d.px!=null?d.px:d[L-1].c,e=envChk(d,A,L),cost=INFO(s,px).spr/a;
+    if(cost<=.2&&e.er>=.2&&e.ratio>=.6&&e.ratio<=1.8)sc.push({s,v:Math.min(e.er/.45,1)*50+(1-Math.min(cost*5,1))*30+Math.min(e.ratio,1.4)/1.4*20})}catch(x){}}
+  sc.sort((x,y)=>y.v-x.v);AD.auto={at:Date.now(),list:sc.slice(0,4).map(x=>x.s),cand:cand.length};return AD.auto.list}
+const hintAuto=()=>AD.auto?`<div class="hint">Auto watchlist (${AD.auto.cand} open markets checked, refreshed every 15 min): <b>${AD.auto.list.join(', ')||'none passes the spread / trend filter right now'}</b>${TDK()?'':' · add a Twelve Data key to include forex'}</div>`:'';
+async function tfRun(){
+  if(AD.tb)return;AD.tb=true;
+  const n=clamp(+$('#swl').value||5,2,15),sel=tfSel(),rows=[];let syms=[],auto=false;
+  try{
+    {const m=($('#adTs').value||'').trim();auto=!m||/^auto$/i.test(m);syms=auto?await autoPick(n):m.split(/[\s,;]+/).filter(Boolean).map(x=>x.toUpperCase()).slice(0,4)}
+    for(const sym of syms)for(const tf of sel){
+      let st='no setup',cls='';
+      try{
+        if(TFMS[tf]<9e5&&!BN.ok(sym))throw new Error('skipped below 15m (saves API credits)');
+        const d=await td(sym,tf),A=analyze(d,n);let ht=null;
+        try{if(HTF[tf]&&TFMS[HTF[tf]]>=6e4)ht=analyze(await td(sym,HTF[tf]),n).trend}catch(e){}
+        const px=d.px!=null?d.px:d[d.length-1].c,L=d.length,f=x=>fmt(x,sym),a=A.atr[L-1],bs=[S.M,S.K,S.cur,S.demo];let sg,K;
+        S.cur=sym;S.demo=false;try{sg=buildSignal(d,A,ht,px,{sym});K=crtFor(d,{sym,bt:true})}finally{S.M=bs[0];S.K=bs[1];S.cur=bs[2];S.demo=bs[3]}
+        const nm=sym.replace('/',' '),hit=[];
+        if(sg.entry!=null&&sg.verified&&(sg.inZone||sg.dist<=2))hit.push({kind:'SMC',dir:sg.dir,key:`${sym}|${tf}|SMC|${sg.dir}|${f(sg.entry)}`,
+          txt:`${nm} ${tf} ${sg.dir>0?'BUY':'SELL'} early entry, SMC. Zone ${f(sg.entry)}${sg.inZone?', price is in the zone':', '+sg.dist.toFixed(1)+' ATR away'}. SL ${f(sg.sl)}, TP1 ${f(sg.tp1)}. Wait for the reaction candle.`});
+        if(K&&!K.pend&&L-1-K.sw<=12&&(K.dir>0?(px<K.mid&&px>K.ext):(px>K.mid&&px<K.ext))){
+          const risk=Math.abs(px-K.ext)+.25*a,rr=Math.abs(K.mid-px)/risk;
+          if(rr>=1.2&&INFO(sym,px).spr*1.2/risk<=.15)hit.push({kind:'CRT',dir:K.dir,key:`${sym}|${tf}|CRT|${K.dir}|${K.hi}|${K.lo}`,
+            txt:`${nm} ${tf} ${K.dir>0?'BUY':'SELL'} early entry, CRT. ${K.dir>0?'Low':'High'} swept, range ${f(K.lo)} to ${f(K.hi)} reclaimed. SL beyond ${f(K.ext)}, TP1 ${f(K.mid)}, TP2 ${f(K.tgt)} (${rr.toFixed(1)}R to TP1). Confirm with a lower timeframe CHoCH.`})}
+        if(hit.length){st=hit.map(h=>(h.dir>0?'BUY ':'SELL ')+h.kind).join(' + ');cls=hit[0].dir>0?'up':'dn';
+          hit.filter(h=>!AD.ts[h.key]).forEach(h=>{AD.ts[h.key]=Date.now();svT();tfAlert(tf,h.dir,h.kind,h.txt);st+=' · alerted'})}
+      }catch(e){st=String(e.message).slice(0,50);cls='warn'}
+      rows.push(`<tr><td>${sym}</td><td>${tf}</td><td class="${cls}">${esc(st)}</td></tr>`)}
+    $('#adTl').innerHTML=(auto?hintAuto():'')+(rows.length?`<table><thead><tr><th>Symbol</th><th>TF</th><th>Early entry (${new Date().toLocaleTimeString()})</th></tr></thead><tbody>${rows.join('')}</tbody></table>`:(sel.length?'':'<div class="hint">Tick at least one timeframe.</div>'))
+  }finally{AD.tb=false}}
 $('#adOn').addEventListener('click',()=>{AD.on=!AD.on;$('#adOn').textContent=AD.on?'Stop alerts':'Start alerts';
-  if(AD.on){AD.ctx=AD.ctx||new(window.AudioContext||window.webkitAudioContext)();AD.ctx.resume();if('Notification' in window&&Notification.permission==='default')Notification.requestPermission();wake();run();AD.t=setInterval(run,30000)}
-  else{clearInterval(AD.t);try{AD.wl&&AD.wl.release()}catch(e){}}});
+  if(AD.on){AD.ctx=AD.ctx||new(window.AudioContext||window.webkitAudioContext)();AD.ctx.resume();if('Notification' in window&&Notification.permission==='default')Notification.requestPermission();wake();run();AD.t=setInterval(run,30000);tfRun();AD.t2=setInterval(tfRun,30000)}
+  else{clearInterval(AD.t);clearInterval(AD.t2);try{AD.wl&&AD.wl.release()}catch(e){}}});
 $('#adTest').addEventListener('click',()=>{AD.ctx=AD.ctx||new(window.AudioContext||window.webkitAudioContext)();alarm('Test alarm. XAU USD BUY ENTRY confirmed.','ENTRY')});
 })();
 
