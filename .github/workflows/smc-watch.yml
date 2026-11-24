@@ -1,0 +1,32 @@
+name: SMC watcher
+on:
+  schedule:
+    - cron: '0 */5 * * *'     # a new run queues behind the running one, so coverage is continuous
+  workflow_dispatch:
+concurrency:
+  group: smc-watch
+  cancel-in-progress: false
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Restore alert memory (avoids repeating the same alert after a restart)
+        uses: actions/cache@v4
+        with:
+          path: watcher/state.json
+          key: smc-state-${{ github.run_id }}
+          restore-keys: smc-state-
+      - run: npm i --no-save playwright && npx playwright install --with-deps chromium
+      - name: Serve the page
+        run: nohup python3 -m http.server 8080 >/dev/null 2>&1 &
+      - name: Run watcher
+        run: node watcher/watch.js
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          TD_KEY: ${{ secrets.TD_KEY }}
+          RUN_MIN: 350
